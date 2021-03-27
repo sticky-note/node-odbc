@@ -33,16 +33,25 @@
 #include <sqlext.h>
 #endif
 
+#define MAX_UTF8_BYTES 4
 #define MAX_FIELD_SIZE 1024
 #define MAX_VALUE_SIZE 1048576
 
 #ifdef UNICODE
+
 #define ERROR_MESSAGE_BUFFER_BYTES 2048
 #define ERROR_MESSAGE_BUFFER_CHARS 1024
+#define TXTLEN(x) wcslen((SQLWCHAR *) x)
+
 #else
+
 #define ERROR_MESSAGE_BUFFER_BYTES 2048
 #define ERROR_MESSAGE_BUFFER_CHARS 2048
-#endif
+#define TXTLEN(x) strlen((char *) x)
+
+#endif /* UNICODE */
+
+#define NUMTCHAR(X)	(sizeof (X) / sizeof (SQLTCHAR))
 
 #define FETCH_ARRAY 3
 #define FETCH_OBJECT 4
@@ -92,7 +101,7 @@ typedef struct Parameter {
 typedef struct ColumnData {
   SQLSMALLINT bind_type;
   union {
-    SQLCHAR     *char_data;
+    SQLTCHAR    *char_data;
     SQLWCHAR    *wchar_data;
     SQLDOUBLE    double_data;
     SQLCHAR      tinyint_data;
@@ -103,7 +112,7 @@ typedef struct ColumnData {
   SQLLEN    size;
 
   ~ColumnData() {
-    if (bind_type == SQL_C_CHAR) {
+    if (bind_type == SQL_C_TCHAR) {
       delete[] this->char_data;
       return;
     }
@@ -255,11 +264,12 @@ class ODBC {
     static Napi::Value Init(Napi::Env env, Napi::Object exports);
 
     static SQLTCHAR* NapiStringToSQLTCHAR(Napi::String string);
+    static Napi::String SQLTCHARToNapiString(Napi::Env env, SQLTCHAR* sqlString);
 
     static void StoreBindValues(Napi::Array *values, Parameter **parameters);
 
     static SQLRETURN DescribeParameters(SQLHSTMT hSTMT, Parameter **parameters, SQLSMALLINT parameterCount);
-    static SQLRETURN  BindParameters(SQLHSTMT hSTMT, Parameter **parameters, SQLSMALLINT parameterCount);
+    static SQLRETURN BindParameters(SQLHSTMT hSTMT, Parameter **parameters, SQLSMALLINT parameterCount);
     static Napi::Array ParametersToArray(Napi::Env env, QueryData *data);
 
     void Free();
