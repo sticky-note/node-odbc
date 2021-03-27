@@ -13,12 +13,15 @@
         '<!@(node -p "require(\'node-addon-api\').include")'
       ],
       'defines' : [
-        'NAPI_EXPERIMENTAL'
+        'NAPI_EXPERIMENTAL',
       ],
       'conditions' : [
         [ 'OS == "linux"', {
+          'include_dirs': [
+            '/usr/include/libiodbc'
+          ],
           'libraries' : [
-            '-lodbc'
+            '-liodbc'
           ],
           'cflags' : [
             '-g'

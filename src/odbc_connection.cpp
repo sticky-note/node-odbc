@@ -20,8 +20,6 @@
 #include "odbc_connection.h"
 #include "odbc_statement.h"
 
-#define MAX_UTF8_BYTES 4
-
 // object keys for the result object
 const char* NAME = "name\0";
 const char* DATA_TYPE = "dataType\0";
@@ -294,11 +292,7 @@ Napi::Array ODBCConnection::ProcessDataForNapi(Napi::Env env, QueryData *data, N
   if (data->sql == NULL) {
     rows.Set(Napi::String::New(env, STATEMENT), env.Null());
   } else {
-    #ifdef UNICODE
-    rows.Set(Napi::String::New(env, STATEMENT), Napi::String::New(env, (const char16_t*)data->sql));
-    #else
-    rows.Set(Napi::String::New(env, STATEMENT), Napi::String::New(env, (const char*)data->sql));
-    #endif
+    rows.Set(Napi::String::New(env, STATEMENT), ODBC::SQLTCHARToNapiString(env, data->sql));
   }
 
   // set the 'parameters' property
@@ -319,11 +313,7 @@ Napi::Array ODBCConnection::ProcessDataForNapi(Napi::Env env, QueryData *data, N
 
   for (SQLSMALLINT h = 0; h < columnCount; h++) {
     Napi::Object column = Napi::Object::New(env);
-    #ifdef UNICODE
-    column.Set(Napi::String::New(env, NAME), Napi::String::New(env, (const char16_t*)columns[h]->ColumnName));
-    #else
-    column.Set(Napi::String::New(env, NAME), Napi::String::New(env, (const char*)columns[h]->ColumnName));
-    #endif
+    column.Set(Napi::String::New(env, NAME), ODBC::SQLTCHARToNapiString(env, columns[h]->ColumnName));
     column.Set(Napi::String::New(env, DATA_TYPE), Napi::Number::New(env, columns[h]->DataType));
     column.Set(Napi::String::New(env, COLUMN_SIZE), Napi::Number::New(env, columns[h]->ColumnSize));
     column.Set(Napi::String::New(env, DECIMAL_DIGITS), Napi::Number::New(env, columns[h]->DecimalDigits));
@@ -426,23 +416,19 @@ Napi::Array ODBCConnection::ProcessDataForNapi(Napi::Env env, QueryData *data, N
           case SQL_WLONGVARCHAR :
             value = Napi::String::New(env, (const char16_t*)storedRow[j].wchar_data, storedRow[j].size);
             break;
-          // Napi::String (char)
+          // Napi::String (SQLTCHAR)
           case SQL_CHAR :
           case SQL_VARCHAR :
           case SQL_LONGVARCHAR :
           default:
-            value = Napi::String::New(env, (const char*)storedRow[j].char_data, storedRow[j].size);
+            value = ODBC::SQLTCHARToNapiString(env, storedRow[j].char_data);
             break;
         }
       }
       if (this->connectionOptions.fetchArray == true) {
         row.Set(j, value);
       } else {
-        #ifdef UNICODE
-        row.Set(Napi::String::New(env, (const char16_t*)columns[j]->ColumnName), value);
-        #else
-        row.Set(Napi::String::New(env, (const char*)columns[j]->ColumnName), value);
-        #endif
+        row.Set(ODBC::SQLTCHARToNapiString(env, columns[j]->ColumnName), value);
       }
     }
     rows.Set(i, row);
@@ -676,7 +662,7 @@ class QueryAsyncWorker : public ODBCAsyncWorker {
 
     void Execute() {
       DEBUG_PRINTF("[SQLHENV: %p][SQLHDBC: %p] ODBCConnection::QueryAsyncWorker::Execute(): Running SQL '%s'\n", odbcConnectionObject->hENV, odbcConnectionObject->hDBC, (char*)data->sql);
-      
+
       // allocate a new statement handle
       uv_mutex_lock(&ODBC::g_odbcMutex);
       if (odbcConnectionObject->hDBC == SQL_NULL_HANDLE) {
@@ -934,17 +920,17 @@ void ODBCConnection::ParametersToArray(Napi::Reference<Napi::Array> *napiParamet
           case SQL_WLONGVARCHAR:
             value = Napi::String::New(env, (const char16_t*)parameters[i]->ParameterValuePtr, parameters[i]->StrLen_or_IndPtr/sizeof(SQLWCHAR));
             break;
-          // Napi::String (char)
+          // Napi::String (SQLTCHAR)
           case SQL_CHAR:
           case SQL_VARCHAR:
           case SQL_LONGVARCHAR:
           default:
-            value = Napi::String::New(env, (const char*)parameters[i]->ParameterValuePtr);
+            value = ODBC::SQLTCHARToNapiString(env, (SQLTCHAR *) parameters[i]->ParameterValuePtr);
             break;
         }
       }
       napiArray.Set(i, value);
-    } 
+    }
   }
 }
 
@@ -1142,9 +1128,9 @@ class CallProcedureAsyncWorker : public ODBCAsyncWorker {
             case SQL_VARCHAR:
             case SQL_LONGVARCHAR:
             default:
-              bufferSize = (SQLSMALLINT)(data->parameters[i]->ColumnSize + 1) * sizeof(SQLCHAR);
-              data->parameters[i]->ValueType = SQL_C_CHAR;
-              data->parameters[i]->ParameterValuePtr = new SQLCHAR[bufferSize];
+              bufferSize = (SQLSMALLINT)(data->parameters[i]->ColumnSize + 1) * sizeof(SQLTCHAR);
+              data->parameters[i]->ValueType = SQL_C_TCHAR;
+              data->parameters[i]->ParameterValuePtr = new SQLTCHAR[bufferSize];
               data->parameters[i]->BufferLength = bufferSize;
               break;
           }
@@ -1152,7 +1138,7 @@ class CallProcedureAsyncWorker : public ODBCAsyncWorker {
       }
 
       // We saved a reference to parameters passed it. Need to tell which
-      // parameters we have to overwrite, now that we have 
+      // parameters we have to overwrite, now that we have
       this->overwriteParams = new unsigned char[data->parameterCount]();
       for (int i = 0; i < data->parameterCount; i++) {
         if (data->parameters[i]->InputOutputType == SQL_PARAM_OUTPUT || data->parameters[i]->InputOutputType == SQL_PARAM_INPUT_OUTPUT) {
@@ -1368,11 +1354,7 @@ Napi::Value ODBCConnection::GetInfo(const Napi::Env env, const SQLUSMALLINT opti
                               &infoLength);      // StringLengthPtr
 
   if (SQL_SUCCEEDED(sqlReturnCode)) {
-    #ifdef UNICODE
-      return Napi::String::New(env, (const char16_t *)infoValue, infoLength);
-    #else
-      return Napi::String::New(env, (const char *) infoValue, infoLength);
-    #endif
+    return ODBC::SQLTCHARToNapiString(env, infoValue);
   }
 
   // TODO: Fix
@@ -1440,7 +1422,7 @@ class TablesAsyncWorker : public ODBCAsyncWorker {
 
     void OnOK() {
       DEBUG_PRINTF("[SQLHENV: %p][SQLHDBC: %p] ODBCConnection::TablesProcedureAsyncWorker::OnOk()\n", odbcConnectionObject->hENV, odbcConnectionObject->hDBC);
-  
+
       Napi::Env env = Env();
       Napi::HandleScope scope(env);
 
@@ -2084,7 +2066,7 @@ SQLRETURN ODBCConnection::BindColumns(QueryData *data) {
         column->bind_type = SQL_C_DOUBLE;
         data->boundRow[i] = new SQLDOUBLE();
         break;
-        
+
       case SQL_TINYINT:
         column->buffer_size = sizeof(SQLCHAR);
         column->bind_type = SQL_C_UTINYINT;
@@ -2129,9 +2111,9 @@ SQLRETURN ODBCConnection::BindColumns(QueryData *data) {
       case SQL_VARCHAR:
       case SQL_LONGVARCHAR:
       default:
-        column->buffer_size = (column->ColumnSize * MAX_UTF8_BYTES + 1) * sizeof(SQLCHAR);
-        column->bind_type = SQL_C_CHAR;
-        data->boundRow[i] = new SQLCHAR[column->buffer_size]();
+        column->buffer_size = (column->ColumnSize * MAX_UTF8_BYTES + 1) * sizeof(SQLTCHAR);
+        column->bind_type = SQL_C_TCHAR;
+        data->boundRow[i] = new SQLTCHAR[column->buffer_size]();
         break;
     }
 
@@ -2193,23 +2175,24 @@ SQLRETURN ODBCConnection::FetchAll(QueryData *data) {
           break;
 
         case SQL_C_BINARY:
-          row[i].char_data = new SQLCHAR[row[i].size]();
+          row[i].char_data = new SQLTCHAR[row[i].size]();
           memcpy(row[i].char_data, data->boundRow[i], row[i].size);
           break;
 
         case SQL_C_WCHAR:
-          row[i].size = strlen16((const char16_t *)data->boundRow[i]);
-          row[i].wchar_data = new SQLWCHAR[row[i].size]();
+          row[i].size = std::wcslen((SQLWCHAR *) data->boundRow[i]);
+          row[i].wchar_data = new SQLWCHAR[row[i].size + 1]();
           memcpy(row[i].wchar_data, data->boundRow[i], row[i].size * sizeof(SQLWCHAR));
+          row[i].wchar_data[row[i].size] = L'\0';
           break;
 
         case SQL_C_CHAR:
         default:
-          row[i].size = strlen((const char *)data->boundRow[i]);
+          row[i].size = TXTLEN(data->boundRow[i]);
           // Although fields going from SQL_C_CHAR to Napi::String use
           // row[i].size, NUMERIC data uses atof() which requires a
           // null terminator. Need to add an aditional byte.
-          row[i].char_data = new SQLCHAR[row[i].size + 1]();
+          row[i].char_data = new SQLTCHAR[row[i].size + 1]();
           memcpy(row[i].char_data, data->boundRow[i], row[i].size);
           break;
 

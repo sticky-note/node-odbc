@@ -111,6 +111,9 @@ Napi::Value ODBC::Init(Napi::Env env, Napi::Object exports) {
   // Use ODBC 3.x behavior
   SQLSetEnvAttr(hEnv, SQL_ATTR_ODBC_VERSION, (SQLPOINTER) SQL_OV_ODBC3, SQL_IS_UINTEGER);
 
+  // Set default system locale for Unicode Conversions
+  setlocale(LC_ALL, "");
+
   return exports;
 }
 
@@ -132,7 +135,7 @@ ODBC::~ODBC() {
 ////////////////////////////////////////////////////////////////////////////////
 //
 // This class extends Napi::AsyncWorker to standardize error handling for all
-// AsyncWorkers used by the package 
+// AsyncWorkers used by the package
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -289,6 +292,7 @@ class ConnectAsyncWorker : public ODBCAsyncWorker {
   private:
 
     SQLTCHAR *connectionStringPtr;
+    SQLTCHAR outConnectionStringPtr[120];
     ConnectionOptions *options;
     SQLSMALLINT maxColumnNameLength;
     SQLUINTEGER availableIsolationLevels;
@@ -328,7 +332,7 @@ class ConnectAsyncWorker : public ODBCAsyncWorker {
           return;
         }
       }
-      
+
       if (options->loginTimeout > 0) {
         sqlReturnCode = SQLSetConnectAttr(
           hDBC,                              // ConnectionHandle
@@ -346,14 +350,14 @@ class ConnectAsyncWorker : public ODBCAsyncWorker {
 
       //Attempt to connect
       sqlReturnCode = SQLDriverConnect(
-        hDBC,                // ConnectionHandle
-        NULL,                // WindowHandle
-        connectionStringPtr, // InConnectionString
-        SQL_NTS,             // StringLength1
-        NULL,                // OutConnectionString
-        0,                   // BufferLength - in characters
-        NULL,                // StringLength2Ptr
-        SQL_DRIVER_NOPROMPT  // DriverCompletion
+        hDBC,                                // ConnectionHandle
+        NULL,                                // WindowHandle
+        connectionStringPtr,                 // InConnectionString
+        SQL_NTS,                             // StringLength1
+        (SQLTCHAR *) outConnectionStringPtr, // OutConnectionString
+        NUMTCHAR(outConnectionStringPtr),    // BufferLength - in characters
+        NULL,                                // StringLength2Ptr
+        SQL_DRIVER_NOPROMPT                  // DriverCompletion
       );
       uv_mutex_unlock(&ODBC::g_odbcMutex);
       if (!SQL_SUCCEEDED(sqlReturnCode)) {
@@ -412,7 +416,7 @@ class ConnectAsyncWorker : public ODBCAsyncWorker {
       connectionArguments.push_back(Napi::External<ConnectionOptions>::New(env, options)); // connectionArguments[2]
       connectionArguments.push_back(Napi::External<SQLSMALLINT>::New(env, &maxColumnNameLength)); // connectionArguments[3]
       connectionArguments.push_back(Napi::External<SQLUINTEGER>::New(env, &availableIsolationLevels)); // connectionArguments[4]
-        
+
       Napi::Value connection = ODBCConnection::constructor.New(connectionArguments);
 
       // pass the arguments to the callback function
@@ -503,19 +507,50 @@ Napi::Value ODBC::Connect(const Napi::CallbackInfo& info) {
 //    UNICODE : SQLWCHAR*
 // no UNICODE : SQLCHAR*
 SQLTCHAR* ODBC::NapiStringToSQLTCHAR(Napi::String string) {
+  // # ifdef WIN32
+  // #define OPL_W2A(w, a, cb)     \
+  //   WideCharToMultiByte(CP_ACP, 0, w, cb, a, cb, NULL, NULL)
 
-  size_t byteCount = 0;
+  // #define OPL_A2W(a, w, cb)     \
+  //   MultiByteToWideChar(CP_ACP, 0, a, cb, w, cb)
+
+  // # else
+  // #define OPL_W2A(XW, XA, SIZE)      std::wcstombs((char *) XA, (wchar_t *) XW, SIZE)
+  // #define OPL_A2W(XA, XW, SIZE)      std::mbstowcs((wchar_t *) XW, (char *) XA, SIZE)
+  // # endif
+  std::string tempString;
+  size_t stringSize;
+  SQLTCHAR *sqlString;
+
+  tempString = string.Utf8Value();
+  stringSize = tempString.length();
+  sqlString = new SQLTCHAR[stringSize + 1]();
 
   #ifdef UNICODE
-    std::u16string tempString = string.Utf16Value();
-    byteCount = (tempString.length() + 1) * 2;
+    std::mbstowcs((SQLTCHAR *) sqlString, tempString.data(), stringSize);
+    sqlString[stringSize] = L'\0';
   #else
-    std::string tempString = string.Utf8Value();
-    byteCount = tempString.length() + 1;
+    std::strcpy((char *) sqlString, tempString.data());
   #endif
-  SQLTCHAR *sqlString = new SQLTCHAR[byteCount];
-  std::memcpy(sqlString, tempString.c_str(), byteCount);
   return sqlString;
+}
+
+// Take an SQLTCHAR*, and convert it to a Napi::String
+//    UNICODE : SQLTCHAR* == SQLWCHAR*
+// no UNICODE : SQLTCHAR* == SQLCHAR*
+Napi::String ODBC::SQLTCHARToNapiString(Napi::Env env, SQLTCHAR* sqlString) {
+  Napi::String string;
+  SQLCHAR *tempString;
+
+#ifdef UNICODE
+  tempString = new SQLCHAR[TXTLEN(sqlString) + 1]();
+  std::wcstombs((char *) tempString, (SQLTCHAR *) sqlString, TXTLEN(sqlString) + 1);
+#else
+  tempString = (SQLCHAR *) sqlString;
+#endif
+
+  string = Napi::String::New(env, (char *) tempString);
+  return string;
 }
 
 /******************************************************************************
@@ -531,7 +566,7 @@ SQLTCHAR* ODBC::NapiStringToSQLTCHAR(Napi::String string) {
  *      between 1 and 3 entries in lenth, with the following signfigance and default values:
  *        1. Value (REQUIRED): The value to bind
  *        2. In/Out (Optional): Defaults to SQL_PARAM_INPUT
- *        3. DataType (Optional): Defaults based on the value 
+ *        3. DataType (Optional): Defaults based on the value
  *    Objects:
  *      can hold any of the following properties (but requires at least 'value' property)
  *        value (Requited): The value to bind
