@@ -111,8 +111,10 @@ Napi::Value ODBC::Init(Napi::Env env, Napi::Object exports) {
   // Use ODBC 3.x behavior
   SQLSetEnvAttr(hEnv, SQL_ATTR_ODBC_VERSION, (SQLPOINTER) SQL_OV_ODBC3, SQL_IS_UINTEGER);
 
-  // Set default system locale for Unicode Conversions
-  setlocale(LC_ALL, "");
+  SQLSetEnvAttr(hEnv, 1064, (SQLPOINTER) 3, SQL_IS_UINTEGER);
+
+  // // Set default system locale for Unicode Conversions
+  // setlocale(LC_ALL, "");
 
   return exports;
 }
@@ -249,7 +251,7 @@ ODBCError* ODBCAsyncWorker::GetODBCErrors
     );
 
     if (SQL_SUCCEEDED(returnCode)) {
-      DEBUG_PRINTF("ODBC::GetSQLError : errorMessage=%s, errorSQLState=%s\n", errorMessage, errorSQLState);
+      DEBUG_PRINTF("ODBC::GetSQLError : errorMessage=%ls, errorSQLState=%ls\n", errorMessage, errorSQLState);
       error.state = errorSQLState;
       error.code = nativeError;
       #ifdef UNICODE
@@ -349,7 +351,7 @@ class ConnectAsyncWorker : public ODBCAsyncWorker {
       }
 
       //Attempt to connect
-      sqlReturnCode = SQLDriverConnect(
+      sqlReturnCode = SQLDriverConnectW(
         hDBC,                                // ConnectionHandle
         NULL,                                // WindowHandle
         connectionStringPtr,                 // InConnectionString
@@ -462,7 +464,9 @@ Napi::Value ODBC::Connect(const Napi::CallbackInfo& info) {
 
   if (info[0].IsString()) {
     connectionString = info[0].As<Napi::String>();
+    printf(" connString: %s\n: ", connectionString.Utf8Value().c_str());
     connectionStringPtr = ODBC::NapiStringToSQLTCHAR(connectionString);
+    printf(" connString unicodised: %ls\n: ", connectionStringPtr);
   } else if (info[0].IsObject()) {
     Napi::Object connectionObject = info[0].As<Napi::Object>();
     if (connectionObject.Has("connectionString") && connectionObject.Get("connectionString").IsString()) {

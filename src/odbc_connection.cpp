@@ -2180,8 +2180,8 @@ SQLRETURN ODBCConnection::FetchAll(QueryData *data) {
           break;
 
         case SQL_C_WCHAR:
-          row[i].size = std::wcslen((SQLWCHAR *) data->boundRow[i]);
-          row[i].wchar_data = new SQLWCHAR[row[i].size + 1]();
+          row[i].size = strlen16((const char16_t *)data->boundRow[i]);
+          row[i].wchar_data = new SQLWCHAR[row[i].size]();
           memcpy(row[i].wchar_data, data->boundRow[i], row[i].size * sizeof(SQLWCHAR));
           row[i].wchar_data[row[i].size] = L'\0';
           break;

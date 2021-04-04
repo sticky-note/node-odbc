@@ -39,6 +39,54 @@
 
 #ifdef UNICODE
 
+/*
+ *  Mapping macros for Unicode
+ */
+#ifndef SQL_NOUNICODEMAP 	/* define this to disable the mapping */
+#ifdef  UNICODE
+
+#define SQLColAttribute		SQLColAttributeW
+#define SQLColAttributes	SQLColAttributesW
+#define SQLConnect		SQLConnectW
+#define SQLDescribeCol		SQLDescribeColW
+#define SQLError		SQLErrorW
+#define SQLExecDirect		SQLExecDirectW
+#define SQLGetConnectAttr	SQLGetConnectAttrW
+#define SQLGetCursorName	SQLGetCursorNameW
+#define SQLGetDescField		SQLGetDescFieldW
+#define SQLGetDescRec		SQLGetDescRecW
+#define SQLGetDiagField		SQLGetDiagFieldW
+#define SQLGetDiagRec		SQLGetDiagRecW
+#define SQLPrepare		SQLPrepareW
+#define SQLSetConnectAttr	SQLSetConnectAttrW
+#define SQLSetCursorName	SQLSetCursorNameW
+#define SQLSetDescField		SQLSetDescFieldW
+#define SQLSetStmtAttr		SQLSetStmtAttrW
+#define SQLGetStmtAttr		SQLGetStmtAttrW
+#define SQLColumns		SQLColumnsW
+#define SQLGetConnectOption	SQLGetConnectOptionW
+#define SQLGetInfo		SQLGetInfoW
+#define SQLGetTypeInfo		SQLGetTypeInfoW
+#define SQLSetConnectOption	SQLSetConnectOptionW
+#define SQLSpecialColumns	SQLSpecialColumnsW
+#define SQLStatistics		SQLStatisticsW
+#define SQLTables		SQLTablesW
+#define SQLDataSources		SQLDataSourcesW
+#define SQLDriverConnect	SQLDriverConnectW
+#define SQLBrowseConnect	SQLBrowseConnectW
+#define SQLColumnPrivileges	SQLColumnPrivilegesW
+#define SQLForeignKeys		SQLForeignKeysW
+#define SQLNativeSql		SQLNativeSqlW
+#define SQLPrimaryKeys		SQLPrimaryKeysW
+#define SQLProcedureColumns	SQLProcedureColumnsW
+#define SQLProcedures		SQLProceduresW
+#define SQLTablePrivileges	SQLTablePrivilegesW
+#define SQLDrivers		SQLDriversW
+
+#endif /* UNICODE */
+#endif /* SQL_NOUNICODEMAP */
+
+
 #define ERROR_MESSAGE_BUFFER_BYTES 2048
 #define ERROR_MESSAGE_BUFFER_CHARS 1024
 #define TXTLEN(x) wcslen((SQLWCHAR *) x)
